@@ -24,6 +24,7 @@ WEATHER_TYRE_DIR = os.path.join("data", "Tyres weather data")
 def get_connection():
     db_url = os.getenv("DATABASE_URL")
     if db_url:
+        db_url = db_url.replace("postgresql+psycopg2://", "postgresql://", 1)
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         return psycopg2.connect(db_url)

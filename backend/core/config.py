@@ -22,11 +22,15 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def assemble_db_url(self):
         if self.DATABASE_URL:
-            if self.DATABASE_URL.startswith("postgres://"):
-                self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            url = self.DATABASE_URL
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+            elif url.startswith("postgresql://"):
+                url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+            self.DATABASE_URL = url
         else:
             pwd = quote_plus(self.DATABASE_PASSWORD or "")
-            self.DATABASE_URL = f"postgresql://{self.DATABASE_USER}:{pwd}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+            self.DATABASE_URL = f"postgresql+psycopg2://{self.DATABASE_USER}:{pwd}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
         return self
 
 settings = Settings()
