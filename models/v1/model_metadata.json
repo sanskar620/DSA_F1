@@ -1,0 +1,39 @@
+{
+    "version": "v1",
+    "training_date": "2026-09-13",
+    "train_races_count": 50,
+    "test_races_count": 13,
+    "models": {
+        "lap_time": {
+            "features": [
+                "compound",
+                "tyre_age",
+                "recent_pace",
+                "race_progress",
+                "laps_remaining",
+                "TrackTemp",
+                "AirTemp"
+            ],
+            "target": "lap_time_seconds"
+        },
+        "tyre_perf": {
+            "features": [
+                "compound",
+                "tyre_age",
+                "race_progress",
+                "TrackTemp"
+            ],
+            "target": "lap_time_seconds"
+        },
+        "pit_decision": {
+            "features": [
+                "compound",
+                "tyre_age",
+                "recent_pace",
+                "laps_remaining",
+                "race_progress"
+            ],
+            "target": "pit_now"
+        }
+    }
+}

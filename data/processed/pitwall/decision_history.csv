@@ -1,0 +1,8 @@
+lap,event_trigger,decision,recommended_compound,strategy,objective,robustness,expected_finish,podium_prob
+15,Initial Evaluation,STAY OUT,MEDIUM,MEDIUM - HARD,BALANCED,HIGH (Robust across almost all tested objectives),4.0,0.0
+31,Event Detected/Interval,STAY OUT,HARD,HARD - HARD,BALANCED,HIGH (Robust across almost all tested objectives),5.96,0.0
+34,Event Detected/Interval,STAY OUT,HARD,HARD - HARD,BALANCED,HIGH (Robust across almost all tested objectives),4.57,0.0
+37,Event Detected/Interval,STAY OUT,HARD,HARD - HARD,BALANCED,HIGH (Robust across almost all tested objectives),3.98,0.02
+40,Event Detected/Interval,STAY OUT,HARD,HARD - HARD,BALANCED,HIGH (Robust across almost all tested objectives),4.39,0.0
+43,Event Detected/Interval,STAY OUT,HARD,HARD - HARD,BALANCED,HIGH (Robust across almost all tested objectives),6.0,0.0
+58,Event Detected/Interval,STAY OUT,NONE,FINISH,BALANCED,HIGH,1.0,1.0
