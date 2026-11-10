@@ -1,0 +1,9 @@
+[project]
+name = "f1-strategyiq"
+version = "1.0.0"
+description = "F1 StrategyIQ - Race Strategy Optimization & Pit-Wall API"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.vercel]
+entrypoint = "backend.main:app"
