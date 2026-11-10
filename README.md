@@ -132,17 +132,18 @@ Open `http://localhost:8080` in your browser.
                                                   +----------------------------+
 ```
 
-### Deploying Backend to Render
-1. Create a new **Web Service** on [Render](https://render.com).
-2. Connect your GitHub repository (`sanskar620/DSA_F1`).
-3. Set the following build settings:
-   * **Environment:** `Python 3`
-   * **Build Command:** `pip install -r requirements.txt`
-   * **Start Command:** `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
-4. In **Environment Variables**, add:
-   * `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`  
-     *(or `DATABASE_URL_ENV` with your full PostgreSQL connection string from Render PostgreSQL or Supabase)*
-   * `MODEL_DIR=models/v1`
+### Deploying Backend & Database to Render (1-Click Blueprint)
+1. Go to your [Render Dashboard](https://dashboard.render.com).
+2. Click **New +** and select **Blueprint**.
+3. Connect your repository (`sanskar620/DSA_F1`).
+4. Render will automatically read `render.yaml` and provision:
+   * **`f1-strategyiq-db`:** Managed PostgreSQL database.
+   * **`f1-strategyiq-backend`:** FastAPI web service with environment variables and connection string automatically linked.
+5. Click **Apply**.
+6. Once deployed, open the Render web service Shell and run the one-time database seed command:
+   ```bash
+   python scripts/load_database.py
+   ```
 
 ### Deploying Frontend to Vercel
 1. Import your GitHub repository (`sanskar620/DSA_F1`) in [Vercel](https://vercel.com).
@@ -165,3 +166,4 @@ Open `http://localhost:8080` in your browser.
 
 ## 📜 License
 This project is open-source under the MIT License.
+

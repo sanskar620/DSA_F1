@@ -22,6 +22,11 @@ HISTORICAL_DIR = os.path.join("data", "Historical data")
 WEATHER_TYRE_DIR = os.path.join("data", "Tyres weather data")
 
 def get_connection():
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        return psycopg2.connect(db_url)
     return psycopg2.connect(
         host=DB_HOST,
         port=DB_PORT,

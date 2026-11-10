@@ -1,0 +1,62 @@
+# ==============================================================================
+# Render Blueprint Specification for F1 StrategyIQ
+# Docs: https://render.com/docs/blueprint-spec
+# ==============================================================================
+
+version: "1"
+
+databases:
+  # ----------------------------------------------------------------------------
+  # 1. Managed PostgreSQL Database
+  # ----------------------------------------------------------------------------
+  - name: f1-strategyiq-db
+    databaseName: f1_strategyiq
+    user: f1_user
+    plan: free
+    region: oregon
+
+services:
+  # ----------------------------------------------------------------------------
+  # 2. FastAPI Backend Web Service (ML Models, Simulation & Strategy Engine)
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: f1-strategyiq-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: MODEL_DIR
+        value: models/v1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: f1-strategyiq-db
+          property: connectionString
+
+  # ----------------------------------------------------------------------------
+  # 3. (Optional) Frontend Static Site on Render
+  # Uncomment below if you wish to host the React UI directly on Render
+  # instead of Vercel.
+  # ----------------------------------------------------------------------------
+  # - type: web
+  #   name: f1-strategyiq-frontend
+  #   runtime: static
+  #   region: oregon
+  #   plan: free
+  #   rootDir: Frontend
+  #   buildCommand: npm install && npm run build
+  #   staticPublishPath: .output/public
+  #   routes:
+  #     - type: rewrite
+  #       source: /*
+  #       destination: /index.html
+  #   envVars:
+  #     - key: VITE_API_URL
+  #       fromService:
+  #         type: web
+  #         name: f1-strategyiq-backend
+  #         property: host
