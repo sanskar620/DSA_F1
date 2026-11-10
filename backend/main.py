@@ -31,8 +31,24 @@ app.include_router(pitwall.router, prefix="/api/pitwall", tags=["Pit-Wall"])
 
 @app.on_event("startup")
 def startup_event():
-    # Load ML models exactly once on startup
+    # 1. Load ML models exactly once on startup
     model_loader.load_models()
+
+    # 2. Check and auto-initialize database if running for the first time
+    try:
+        from backend.api.dependencies import engine
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            table_check = conn.execute(
+                text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'races');")
+            ).scalar()
+            if not table_check:
+                print("Database tables not found. Automatically running initial schema & data loader...")
+                from scripts.load_database import load_database
+                load_database()
+                print("Database auto-initialization complete.")
+    except Exception as e:
+        print(f"Database startup check note: {e}")
 
 @app.get("/")
 def root():
