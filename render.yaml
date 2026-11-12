@@ -1,7 +1,6 @@
 databases:
   - name: f1-strategyiq-db
     databaseName: f1_strategyiq
-    user: postgres
     plan: free
 
 services:
