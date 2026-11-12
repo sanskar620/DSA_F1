@@ -1,6 +1,18 @@
 import joblib
 import pandas as pd
+from collections import UserList
 from backend.simulation.state import RaceState
+
+# Monkey patch sklearn.compose._column_transformer for forward/backward compatibility
+try:
+    import sklearn.compose._column_transformer as ct
+    if not hasattr(ct, "_RemainderColsList"):
+        class _RemainderColsList(UserList):
+            def __init__(self, columns=None, **kwargs):
+                super().__init__(columns or [])
+        ct._RemainderColsList = _RemainderColsList
+except Exception:
+    pass
 
 class MLPredictor:
     def __init__(self, model_dir: str = "models/v1"):

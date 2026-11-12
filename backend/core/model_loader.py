@@ -1,4 +1,18 @@
 import os
+from collections import UserList
+import warnings
+
+# Monkey patch sklearn.compose._column_transformer for forward/backward compatibility
+try:
+    import sklearn.compose._column_transformer as ct
+    if not hasattr(ct, "_RemainderColsList"):
+        class _RemainderColsList(UserList):
+            def __init__(self, columns=None, **kwargs):
+                super().__init__(columns or [])
+        ct._RemainderColsList = _RemainderColsList
+except Exception as e:
+    pass
+
 from backend.simulation.ml_integration import MLPredictor
 from backend.core.config import settings
 
