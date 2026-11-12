@@ -9,10 +9,22 @@ from datetime import date as dt_date
 
 router = APIRouter()
 
+def _find_data_file(filename: str) -> str:
+    candidates = [
+        os.path.join("data", "Historical data", filename),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "Historical data", filename)),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "Historical data", filename)),
+        os.path.join("..", "data", "Historical data", filename),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[0]
+
 def _get_csv_races(season: int = None):
     try:
-        races_file = os.path.join("data", "Historical data", "races.csv")
-        circuits_file = os.path.join("data", "Historical data", "circuits.csv")
+        races_file = _find_data_file("races.csv")
+        circuits_file = _find_data_file("circuits.csv")
         if not os.path.exists(races_file):
             return []
         df_r = pd.read_csv(races_file)
@@ -43,7 +55,7 @@ def _get_csv_races(season: int = None):
 
 def _get_csv_race_details(race_id: int):
     try:
-        races_file = os.path.join("data", "Historical data", "races.csv")
+        races_file = _find_data_file("races.csv")
         if not os.path.exists(races_file):
             return None
         df_r = pd.read_csv(races_file)

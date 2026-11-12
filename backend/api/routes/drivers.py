@@ -7,12 +7,24 @@ import pandas as pd
 
 router = APIRouter()
 
+def _find_data_file(filename: str) -> str:
+    candidates = [
+        os.path.join("data", "Historical data", filename),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "Historical data", filename)),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "Historical data", filename)),
+        os.path.join("..", "data", "Historical data", filename),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[0]
+
 def _get_csv_drivers():
     try:
-        drivers_file = os.path.join("data", "Historical data", "drivers.csv")
-        results_file = os.path.join("data", "Historical data", "results.csv")
-        constructors_file = os.path.join("data", "Historical data", "constructors.csv")
-        races_file = os.path.join("data", "Historical data", "races.csv")
+        drivers_file = _find_data_file("drivers.csv")
+        results_file = _find_data_file("results.csv")
+        constructors_file = _find_data_file("constructors.csv")
+        races_file = _find_data_file("races.csv")
         
         if not os.path.exists(drivers_file):
             return []
@@ -78,8 +90,8 @@ def _get_csv_drivers():
 
 def _get_csv_driver_performance(driver_id: int, season: int = None, race_id: int = None):
     try:
-        results_file = os.path.join("data", "Historical data", "results.csv")
-        races_file = os.path.join("data", "Historical data", "races.csv")
+        results_file = _find_data_file("results.csv")
+        races_file = _find_data_file("races.csv")
         if not (os.path.exists(results_file) and os.path.exists(races_file)):
             return []
             

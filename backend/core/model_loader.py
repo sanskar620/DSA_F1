@@ -13,12 +13,22 @@ class ModelLoader:
         
     def load_models(self):
         if self._predictor is None:
-            model_path = os.path.join(os.getcwd(), settings.MODEL_DIR)
-            if not os.path.exists(model_path):
-                raise RuntimeError(f"MODEL_DIR '{model_path}' does not exist.")
+            candidates = [
+                os.path.join(os.getcwd(), settings.MODEL_DIR),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", settings.MODEL_DIR)),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", settings.MODEL_DIR)),
+                os.path.abspath(settings.MODEL_DIR),
+            ]
+            valid_path = None
+            for p in candidates:
+                if os.path.exists(p) and os.path.exists(os.path.join(p, "lap_time_model.joblib")):
+                    valid_path = p
+                    break
             
-            # This will fail loudly if the model files are missing
-            self._predictor = MLPredictor(settings.MODEL_DIR)
+            if not valid_path:
+                valid_path = candidates[0]
+            
+            self._predictor = MLPredictor(valid_path)
             
     def get_predictor(self) -> MLPredictor:
         if self._predictor is None:

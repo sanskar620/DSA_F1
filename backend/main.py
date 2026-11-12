@@ -1,3 +1,11 @@
+import sys
+import os
+
+# Ensure project root is in sys.path even if started from inside backend directory
+_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import warnings

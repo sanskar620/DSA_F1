@@ -5,12 +5,15 @@ from backend.simulation.state import RaceState
 class MLPredictor:
     def __init__(self, model_dir: str = "models/v1"):
         """Loads Phase 5 artifacts."""
+        self.model_dir = model_dir
         self.lap_time_model = joblib.load(f"{model_dir}/lap_time_model.joblib")
         self.lap_time_features = joblib.load(f"{model_dir}/lap_time_features.joblib")
         
         # We also load tyre and pit models but they are exposed separately
         self.tyre_model = joblib.load(f"{model_dir}/tyre_model.joblib")
         self.tyre_features = joblib.load(f"{model_dir}/tyre_features.joblib")
+        self.pit_model = joblib.load(f"{model_dir}/pit_decision_model.joblib")
+        self.pit_features = joblib.load(f"{model_dir}/pit_decision_features.joblib")
 
     def predict_lap_time(self, state: RaceState) -> float:
         """
@@ -54,14 +57,11 @@ class MLPredictor:
             'laps_remaining': state.laps_remaining
         }
         
-        # Load pit model and features directly if missing
-        pit_model = joblib.load("models/v1/pit_decision_model.joblib")
-        pit_features = joblib.load("models/v1/pit_decision_features.joblib")
-        
-        df_features = pd.DataFrame([feature_dict])[pit_features]
+        # Inference with preloaded model
+        df_features = pd.DataFrame([feature_dict])[self.pit_features]
         
         # Binary classifier (0 = STAY OUT, 1 = PIT NOW)
-        proba = pit_model.predict_proba(df_features)[0]
+        proba = self.pit_model.predict_proba(df_features)[0]
         return float(proba[1]) # probability of class 1 (PIT NOW)
 
     def predict_tyre_degradation(self, state: RaceState) -> float:
