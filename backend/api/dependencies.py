@@ -4,7 +4,8 @@ from backend.core.config import settings
 from backend.core.model_loader import model_loader
 from backend.simulation.ml_integration import MLPredictor
 
-engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10)
+connect_args = {"connect_timeout": 2} if "psycopg" in settings.DATABASE_URL else {}
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
