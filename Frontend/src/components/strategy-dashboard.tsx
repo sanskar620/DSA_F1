@@ -100,6 +100,33 @@ function getCircuitTotalLaps(raceName?: string, totalLaps?: number): number {
     return totalLaps || 57;
 }
 
+function formatRaceDuration(seconds?: number): string {
+    if (!seconds || isNaN(seconds)) return "-";
+    const totalSec = Math.round(seconds);
+    const hrs = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    if (hrs > 0) {
+        return `${hrs}h ${mins}m ${secs.toString().padStart(2, "0")}s`;
+    }
+    return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+}
+
+function getConstructorSectorBias(teamName?: string, driverId?: number): [number, number, number] {
+    const t = (teamName || "").toLowerCase();
+    const id = driverId || 0;
+    if (t.includes("williams") || id === 848 || id === 858) return [-0.45, +0.68, -0.23];
+    if (t.includes("aston") || id === 4 || id === 840) return [+0.32, -0.42, -0.15];
+    if (t.includes("red bull") || id === 830 || id === 815) return [-0.18, -0.45, -0.18];
+    if (t.includes("ferrari") || id === 844 || id === 832) return [-0.32, -0.12, -0.18];
+    if (t.includes("mclaren") || id === 846 || id === 857) return [-0.12, -0.42, -0.22];
+    if (t.includes("mercedes") || id === 1 || id === 847) return [-0.14, -0.18, -0.12];
+    if (t.includes("haas") || id === 807 || id === 825) return [-0.25, +0.40, +0.12];
+    if (t.includes("alpine") || id === 839 || id === 842) return [+0.25, +0.22, +0.10];
+    const pseudo = ((id * 17) % 9) - 4;
+    return [pseudo * 0.08, -pseudo * 0.12, pseudo * 0.05];
+}
+
 function getBaseState(config: Config, currentLap?: number, compoundOverride?: string) {
     const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
     const startCompound = config.tyre || "MEDIUM";
@@ -321,35 +348,78 @@ function RaceAnalysis({ config, driversList }: { config: Config, driversList: an
   const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
   const driverPace = config.driver?.base_pace || 90.5;
   const rivalPace = rivalDriver?.base_pace || 91.2;
+  const driverAvgPos = config.driver?.avg_pos || 8.0;
+  const rivalAvgPos = rivalDriver?.avg_pos || 10.0;
+  const mainTeam = config.driver?.constructor || "";
+  const rivalTeam = rivalDriver?.constructor || "";
+
   const pitLap = config.tyre === "SOFT" ? Math.round(totalLaps * 0.30) : config.tyre === "MEDIUM" ? Math.round(totalLaps * 0.44) : Math.round(totalLaps * 0.58);
+  const rivalTyre = config.tyre === "MEDIUM" ? "HARD" : "MEDIUM";
+  const rivalPitLap = rivalTyre === "SOFT" ? Math.round(totalLaps * 0.28) : rivalTyre === "MEDIUM" ? Math.round(totalLaps * 0.42) : Math.round(totalLaps * 0.55);
 
   const laps = useMemo(() => {
+    let mainCumulative = 0;
+    // Initial starting gap based on qualifying / average grid position
+    let rivalCumulative = (driverAvgPos - rivalAvgPos) * 1.5;
+
     return Array.from({length: totalLaps}, (_, i) => {
         const lapNum = i + 1;
+        
+        // Main driver degradation and pit lane delta
         const stintProgress = lapNum <= pitLap ? lapNum : lapNum - pitLap;
         const degFactor = config.tyre === "SOFT" ? 0.09 : config.tyre === "MEDIUM" ? 0.05 : 0.03;
         const deg = Math.pow(stintProgress, 1.25) * degFactor;
         const fuelBurn = (lapNum / totalLaps) * 1.6;
         const isPit = lapNum === pitLap;
-        
-        const actual = driverPace + deg - fuelBurn + (isPit ? 22.0 : 0) + (Math.sin(lapNum * 0.4) * 0.2);
+        const mainLapTime = driverPace + deg - fuelBurn + (isPit ? 22.0 : 0) + (Math.sin(lapNum * 0.4) * 0.2);
         const predicted = driverPace + deg - fuelBurn + (isPit ? 22.0 : 0);
-        const gapAhead = Math.max(0.4, (config.driver?.avg_pos <= 2 ? 0.9 : 2.5) + Math.sin(lapNum / 3) * 0.8);
+        mainCumulative += mainLapTime;
+
+        // Rival driver degradation and pit lane delta
+        const rStintProgress = lapNum <= rivalPitLap ? lapNum : lapNum - rivalPitLap;
+        const rDegFactor = rivalTyre === "SOFT" ? 0.09 : rivalTyre === "MEDIUM" ? 0.05 : 0.03;
+        const rDeg = Math.pow(rStintProgress, 1.25) * rDegFactor;
+        const isRivalPit = lapNum === rivalPitLap;
+        const rivalLapTime = rivalPace + rDeg - fuelBurn + (isRivalPit ? 22.0 : 0) + (Math.cos(lapNum * 0.35) * 0.2);
+        rivalCumulative += rivalLapTime;
+
+        // Live gap to rival driver (seconds)
+        const rivalDelta = parseFloat(Math.abs(mainCumulative - rivalCumulative).toFixed(2));
+
+        // Clean air ahead: Front runners have large clean air gaps, midfield cars run in DRS trains
+        const trafficBase = driverAvgPos <= 3 ? 4.2 : driverAvgPos <= 8 ? 2.5 : 1.2;
+        const trafficWave = Math.sin(lapNum / 4) * 0.6 + (isPit ? -1.0 : 0);
+        const gapAhead = Math.max(0.5, parseFloat((trafficBase + trafficWave).toFixed(2)));
+
         return {
             lap: lapNum,
-            actual: parseFloat(actual.toFixed(2)),
+            actual: parseFloat(mainLapTime.toFixed(2)),
             predicted: parseFloat(predicted.toFixed(2)),
-            gapAhead: parseFloat(gapAhead.toFixed(2)),
-            gapBehind: parseFloat((gapAhead * 0.8 + 1.2).toFixed(2))
+            gapAhead: gapAhead,
+            rivalGap: rivalDelta
         };
     });
-  }, [totalLaps, driverPace, config.tyre, pitLap, config.driver]);
+  }, [totalLaps, driverPace, rivalPace, config.tyre, pitLap, rivalPitLap, driverAvgPos, rivalAvgPos]);
 
-  const sectors = useMemo(() => [
-      { name: "Sector 1", main: parseFloat((driverPace * 0.31).toFixed(2)), rival: parseFloat((rivalPace * 0.31).toFixed(2)) },
-      { name: "Sector 2", main: parseFloat((driverPace * 0.44).toFixed(2)), rival: parseFloat((rivalPace * 0.44).toFixed(2)) },
-      { name: "Sector 3", main: parseFloat((driverPace * 0.25).toFixed(2)), rival: parseFloat((rivalPace * 0.25).toFixed(2)) }
-  ], [driverPace, rivalPace]);
+  const sectors = useMemo(() => {
+      const mainBias = getConstructorSectorBias(mainTeam, config.driver?.driver_id);
+      const rivalBias = getConstructorSectorBias(rivalTeam, rivalDriver?.driver_id);
+
+      const s1Main = parseFloat((driverPace * 0.31 + mainBias[0]).toFixed(3));
+      const s1Rival = parseFloat((rivalPace * 0.31 + rivalBias[0]).toFixed(3));
+
+      const s2Main = parseFloat((driverPace * 0.44 + mainBias[1]).toFixed(3));
+      const s2Rival = parseFloat((rivalPace * 0.44 + rivalBias[1]).toFixed(3));
+
+      const s3Main = parseFloat((driverPace * 0.25 + mainBias[2]).toFixed(3));
+      const s3Rival = parseFloat((rivalPace * 0.25 + rivalBias[2]).toFixed(3));
+
+      return [
+          { name: "Sector 1 (Speed)", main: s1Main, rival: s1Rival },
+          { name: "Sector 2 (Technical)", main: s2Main, rival: s2Rival },
+          { name: "Sector 3 (Traction)", main: s3Main, rival: s3Rival }
+      ];
+  }, [driverPace, rivalPace, mainTeam, rivalTeam, config.driver?.driver_id, rivalDriver?.driver_id]);
 
   const driverStats = useMemo(() => {
       const mainAvgPos = config.driver?.avg_pos || 5.0;
@@ -366,7 +436,7 @@ function RaceAnalysis({ config, driversList }: { config: Config, driversList: an
         <div className="mb-6"><Field label="Compare Against" value={comparison} options={driversList.filter((d) => d.driver_id !== config.driver?.driver_id).map(d => ({id: d.driver_id.toString(), label: d.name}))} onChange={setComparison}/></div>
         
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
-            <ChartCard title="Lap Time" subtitle={`Actual pace against model prediction (${config.driver?.name || "Driver"})`}>
+            <ChartCard title="Lap Time" subtitle={`Actual pace against model prediction · ${totalLaps} Laps (${config.driver?.name || "Driver"})`}>
                 <ChartFrame height={250}>
                     <LineChart data={laps} margin={{ left: -20, right: 10 }}>
                         <CartesianGrid stroke={chartColors.grid} vertical={false} />
@@ -374,8 +444,8 @@ function RaceAnalysis({ config, driversList }: { config: Config, driversList: an
                         <YAxis domain={['auto', 'auto']} tick={axis} tickFormatter={(v) => v.toFixed(0) + "s"} />
                         <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => val.toFixed(3) + "s"} />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Line dataKey="actual" name="Actual" stroke={chartColors.red} strokeWidth={2} dot={false} />
-                        <Line dataKey="predicted" name="Predicted" stroke={chartColors.cyan} strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                        <Line dataKey="actual" name={config.driver?.name || "Driver"} stroke={chartColors.red} strokeWidth={2} dot={false} />
+                        <Line dataKey="predicted" name="Predicted Pace" stroke={chartColors.cyan} strokeWidth={2} strokeDasharray="5 5" dot={false} />
                     </LineChart>
                 </ChartFrame>
             </ChartCard>
@@ -396,34 +466,36 @@ function RaceAnalysis({ config, driversList }: { config: Config, driversList: an
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
-            <ChartCard title="Traffic Gaps" subtitle="Seconds to cars ahead and behind">
-                <ChartFrame height={200}>
-                    <AreaChart data={laps} margin={{ left: -20, right: 10 }}>
+            <ChartCard title="Traffic Gaps & Rival Interval" subtitle={`Clean air ahead vs live interval to ${rivalName} across ${totalLaps} laps`}>
+                <ChartFrame height={210}>
+                    <ComposedChart data={laps} margin={{ left: -20, right: 10 }}>
                         <defs>
                             <linearGradient id="gapGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor={chartColors.cyan} stopOpacity={0.3}/>
+                                <stop offset="5%" stopColor={chartColors.cyan} stopOpacity={0.35}/>
                                 <stop offset="95%" stopColor={chartColors.cyan} stopOpacity={0}/>
                             </linearGradient>
                         </defs>
                         <CartesianGrid stroke={chartColors.grid} vertical={false} />
                         <XAxis dataKey="lap" tick={axis} />
                         <YAxis tick={axis} tickFormatter={(v) => v + "s"} />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => val.toFixed(2) + "s"} />
-                        <Area type="monotone" dataKey="gapAhead" name="Gap Ahead" stroke={chartColors.cyan} fillOpacity={1} fill="url(#gapGrad)" />
-                    </AreaChart>
+                        <Tooltip contentStyle={tooltipStyle} formatter={(val: number, name: string) => [`${val.toFixed(2)}s`, name]} />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Area type="monotone" dataKey="gapAhead" name="Clean Air Ahead" stroke={chartColors.cyan} strokeWidth={2} fillOpacity={1} fill="url(#gapGrad)" />
+                        <Line type="monotone" dataKey="rivalGap" name={`Gap to ${rivalName}`} stroke={chartColors.red} strokeWidth={2} strokeDasharray="4 4" dot={false} />
+                    </ComposedChart>
                 </ChartFrame>
             </ChartCard>
 
-            <ChartCard title="Sector Performance" subtitle="Average sector benchmark (seconds)">
-                <ChartFrame height={200}>
+            <ChartCard title="Sector Performance" subtitle={`${config.driver?.name || "Driver"} vs ${rivalName} · Micro-sector delta benchmark`}>
+                <ChartFrame height={210}>
                     <BarChart data={sectors} margin={{ left: -20, right: 10 }}>
                         <CartesianGrid stroke={chartColors.grid} vertical={false} />
                         <XAxis dataKey="name" tick={axis} />
-                        <YAxis domain={['auto', 'auto']} tick={axis} />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => val.toFixed(3) + "s"} />
+                        <YAxis domain={['dataMin - 1.2', 'dataMax + 1.2']} tick={axis} tickFormatter={(v) => v.toFixed(1) + "s"} />
+                        <Tooltip contentStyle={tooltipStyle} formatter={(val: number, name: string) => [`${val.toFixed(3)}s`, name]} />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Bar dataKey="main" name={config.driver?.name} fill={chartColors.red} radius={[4, 4, 0, 0]} maxBarSize={60} />
-                        <Bar dataKey="rival" name={rivalName} fill={chartColors.cyan} radius={[4, 4, 0, 0]} maxBarSize={60} />
+                        <Bar dataKey="main" name={config.driver?.name || "Driver"} fill={chartColors.red} radius={[4, 4, 0, 0]} maxBarSize={55} />
+                        <Bar dataKey="rival" name={rivalName} fill={chartColors.cyan} radius={[4, 4, 0, 0]} maxBarSize={55} />
                     </BarChart>
                 </ChartFrame>
             </ChartCard>
@@ -653,19 +725,19 @@ function StrategyOptimizer({ config }: { config: Config }) {
   });
 
   return <><PageHeader eyebrow="Monte Carlo Strategy Model" title="Strategy Optimizer" description="Compare race outcomes, risk profiles and probability bands." config={config}/>
-    <div className="strategy-summary"><div><span>OPTIMAL STRATEGY</span><strong>{d.recommended_strategy}</strong></div><div><span>PROJECTED FINISH</span><strong>P{d.metrics?.mean_finish_position?.toFixed(1)}</strong></div><div><span>TIME ADVANTAGE</span><strong>{d.baseline?.time_diff < 0 ? d.baseline.time_diff.toFixed(1) : "-0.0"}s</strong></div><div><span>MODEL CONFIDENCE</span><strong>{d.metrics?.win_probability !== undefined ? "87%" : "CALCULATED"}</strong></div></div>
+    <div className="strategy-summary"><div><span>OPTIMAL STRATEGY</span><strong>{d.recommended_strategy}</strong></div><div><span>PROJECTED FINISH</span><strong>P{Math.round(d.metrics?.mean_finish_position || 1)}</strong></div><div><span>TIME ADVANTAGE</span><strong>{d.baseline?.time_diff < 0 ? d.baseline.time_diff.toFixed(1) : "-0.0"}s</strong></div><div><span>MODEL CONFIDENCE</span><strong>{d.metrics?.win_probability !== undefined ? "87%" : "CALCULATED"}</strong></div></div>
     
     <div className="p-4 bg-secondary/30 border-y border-border mb-6 overflow-x-auto">
         <table className="w-full text-sm text-left whitespace-nowrap">
-            <thead><tr className="text-[10px] uppercase text-muted-foreground border-b border-border/50"><th className="pb-2 font-medium">Strategy</th><th className="pb-2 font-medium">Expected Time</th><th className="pb-2 font-medium">Expected Finish</th><th className="pb-2 font-medium">Podium</th><th className="pb-2 font-medium">Win</th><th className="pb-2 font-medium">Risk</th></tr></thead>
+            <thead><tr className="text-[10px] uppercase text-muted-foreground border-b border-border/50"><th className="pb-2 font-medium">Strategy</th><th className="pb-2 font-medium">Expected Time (Duration)</th><th className="pb-2 font-medium">Expected Finish</th><th className="pb-2 font-medium">Podium</th><th className="pb-2 font-medium">Win</th><th className="pb-2 font-medium">Risk</th></tr></thead>
             <tbody>
                 {fullResults.map((r: any, i: number) => (
                     <tr key={i} className="border-b border-border/10 last:border-0 hover:bg-secondary/50">
-                        <td className="py-3 font-mono">{r.Strategy} {r.Strategy === d.recommended_strategy && <span className="ml-2 bg-lime-500/20 text-lime-400 text-[10px] px-2 py-0.5 rounded border border-lime-500/30">RECOMMENDED</span>}</td>
-                        <td className="py-3">{r['Mean Race Time']?.toFixed(1)}</td>
-                        <td className="py-3">P{r['Mean Finish Position']?.toFixed(1)}</td>
-                        <td className="py-3 text-cyan-400">{(r['Podium Probability'] * 100)?.toFixed(0)}%</td>
-                        <td className="py-3 text-red-400">{(r['P1 Probability'] * 100)?.toFixed(0)}%</td>
+                        <td className="py-3 font-mono font-medium">{r.Strategy} {r.Strategy === d.recommended_strategy && <span className="ml-2 bg-lime-500/20 text-lime-400 text-[10px] px-2 py-0.5 rounded border border-lime-500/30 font-bold">RECOMMENDED</span>}</td>
+                        <td className="py-3 font-mono"><span className="font-semibold text-foreground">{formatRaceDuration(r['Mean Race Time'])}</span> <span className="ml-1 text-[11px] text-muted-foreground font-normal">({(r['Mean Race Time'] / 60).toFixed(1)} min)</span></td>
+                        <td className="py-3 font-bold font-mono text-foreground">P{Math.round(r['Mean Finish Position'] || 1)}</td>
+                        <td className="py-3 text-cyan-400 font-mono">{(r['Podium Probability'] * 100)?.toFixed(0)}%</td>
+                        <td className="py-3 text-red-400 font-mono">{(r['P1 Probability'] * 100)?.toFixed(0)}%</td>
                         <td className="py-3"><span className={`text-[10px] px-2 py-0.5 rounded border ${r.Risk > 0.6 ? 'bg-red-500/20 text-red-400 border-red-500/30' : r.Risk < 0.4 ? 'bg-lime-500/20 text-lime-400 border-lime-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30'}`}>{r.Risk > 0.6 ? 'High' : r.Risk < 0.4 ? 'Low' : 'Medium'}</span></td>
                     </tr>
                 ))}
@@ -674,13 +746,13 @@ function StrategyOptimizer({ config }: { config: Config }) {
     </div>
 
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <ChartCard title="Strategy Race Time" subtitle="Lower is faster">
+        <ChartCard title="Strategy Race Time" subtitle="Total Race Duration in Minutes (Lower is faster)">
             <ChartFrame height={250}>
                 <BarChart data={fullResults} layout="vertical" margin={{ left: 10, right: 20 }}>
                     <CartesianGrid stroke={chartColors.grid} horizontal={false} />
-                    <XAxis type="number" domain={['dataMin - 10', 'dataMax + 10']} tick={axis} />
+                    <XAxis type="number" domain={['dataMin - 15', 'dataMax + 15']} tick={axis} tickFormatter={(val: number) => `${Math.floor(val / 60)}m`} />
                     <YAxis dataKey="Strategy" type="category" tick={axis} width={70} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => val.toFixed(1) + "s"} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => [`${formatRaceDuration(val)} (${(val / 60).toFixed(1)} min)`, "Total Duration"]} />
                     <Bar dataKey="Mean Race Time" radius={[0, 4, 4, 0]} maxBarSize={40}>
                         {fullResults.map((entry: any, index: number) => (
                             <Cell key={`cell-${index}`} fill={entry.Strategy === d.recommended_strategy ? chartColors.lime : chartColors.red} />
