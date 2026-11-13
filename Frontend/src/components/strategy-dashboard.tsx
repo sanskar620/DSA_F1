@@ -71,8 +71,37 @@ function StateWrapper({ loading, error, children }: { loading: boolean; error: s
     return <>{children}</>;
 }
 
+function getCircuitTotalLaps(raceName?: string, totalLaps?: number): number {
+    if (totalLaps && totalLaps >= 35 && totalLaps <= 85) return totalLaps;
+    const name = (raceName || "").toLowerCase();
+    if (name.includes("monaco") || name.includes("monte carlo")) return 78;
+    if (name.includes("belgian") || name.includes("spa") || name.includes("francorchamps")) return 44;
+    if (name.includes("british") || name.includes("silverstone")) return 52;
+    if (name.includes("italian") || name.includes("monza")) return 53;
+    if (name.includes("brazil") || name.includes("são paulo") || name.includes("sao paulo") || name.includes("interlagos")) return 71;
+    if (name.includes("hungarian") || name.includes("hungaroring")) return 70;
+    if (name.includes("austrian") || name.includes("red bull ring") || name.includes("spielberg")) return 71;
+    if (name.includes("dutch") || name.includes("zandvoort")) return 72;
+    if (name.includes("singapore") || name.includes("marina bay")) return 62;
+    if (name.includes("las vegas")) return 50;
+    if (name.includes("saudi") || name.includes("jeddah")) return 50;
+    if (name.includes("spanish") || name.includes("catalunya") || name.includes("barcelona")) return 66;
+    if (name.includes("azerbaijan") || name.includes("baku")) return 51;
+    if (name.includes("united states") || name.includes("austin") || name.includes("cota") || name.includes("americas")) return 56;
+    if (name.includes("miami")) return 57;
+    if (name.includes("mexico") || name.includes("rodriguez")) return 71;
+    if (name.includes("abu dhabi") || name.includes("yas marina")) return 58;
+    if (name.includes("australian") || name.includes("albert park") || name.includes("melbourne")) return 58;
+    if (name.includes("japanese") || name.includes("suzuka")) return 53;
+    if (name.includes("canadian") || name.includes("villeneuve") || name.includes("montreal")) return 70;
+    if (name.includes("qatar") || name.includes("lusail")) return 57;
+    if (name.includes("chinese") || name.includes("shanghai")) return 56;
+    if (name.includes("emilia") || name.includes("imola")) return 63;
+    return totalLaps || 57;
+}
+
 function getBaseState(config: Config, currentLap?: number, compoundOverride?: string) {
-    const totalLaps = config.race?.total_laps || 57;
+    const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
     const startCompound = config.tyre || "MEDIUM";
     const driverPos = Math.round(config.driver?.avg_pos || 5);
     const pace = config.driver?.base_pace || 91.5;
@@ -156,7 +185,7 @@ function Overview({ config }: { config: Config }) {
       });
   }, [baseState]);
 
-  const totalLaps = config.race?.total_laps || 57;
+  const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
   const currentLap = baseState.current_lap;
   const driverPos = baseState.current_position;
   const tyreAge = baseState.tyre_age;
@@ -249,23 +278,47 @@ function RaceAnalysis({ config, driversList }: { config: Config, driversList: an
   const rivalDriver = driversList.find(d => d.driver_id.toString() === comparison);
   const rivalName = rivalDriver?.name || "Rival Driver";
 
-  // Historical data from actual season results
+  // Historical data from actual season results aligned chronologically
   const combined = useMemo(() => {
-    const maxLen = Math.max(performance.length, rivalPerf.length);
-    if (maxLen === 0) return [];
-    return Array.from({ length: maxLen }, (_, i) => {
-        const p = performance[i];
-        const r = rivalPerf[i];
-        const raceLabel = (p?.race_name || r?.race_name || `R${i + 1}`).replace(" Grand Prix", "");
-        return {
-            race: raceLabel,
-            mainPos: p?.position ?? null,
-            rivalPos: r?.position ?? null
-        };
+    if (!performance.length && !rivalPerf.length) return [];
+    
+    // Map of round / race name to aligned data point
+    const raceMap = new Map<string, { race: string; round: number; mainPos: number | null; rivalPos: number | null }>();
+    
+    performance.forEach((p, idx) => {
+        const rawName = p.race_name || `Race ${p.round || idx + 1}`;
+        const cleanName = rawName.replace(" Grand Prix", "").replace("GP", "").trim();
+        const key = p.round ? p.round.toString() : cleanName;
+        const pPos = typeof p.position === "number" ? p.position : (p.position ? parseInt(p.position) : null);
+        raceMap.set(key, {
+            race: cleanName,
+            round: p.round || idx + 1,
+            mainPos: pPos,
+            rivalPos: null
+        });
     });
+    
+    rivalPerf.forEach((r, idx) => {
+        const rawName = r.race_name || `Race ${r.round || idx + 1}`;
+        const cleanName = rawName.replace(" Grand Prix", "").replace("GP", "").trim();
+        const key = r.round ? r.round.toString() : cleanName;
+        const rPos = typeof r.position === "number" ? r.position : (r.position ? parseInt(r.position) : null);
+        if (raceMap.has(key)) {
+            raceMap.get(key)!.rivalPos = rPos;
+        } else {
+            raceMap.set(key, {
+                race: cleanName,
+                round: r.round || idx + 1,
+                mainPos: null,
+                rivalPos: rPos
+            });
+        }
+    });
+    
+    return Array.from(raceMap.values()).sort((a, b) => a.round - b.round);
   }, [performance, rivalPerf]);
 
-  const totalLaps = config.race?.total_laps || 57;
+  const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
   const driverPace = config.driver?.base_pace || 90.5;
   const rivalPace = rivalDriver?.base_pace || 91.2;
   const pitLap = config.tyre === "SOFT" ? Math.round(totalLaps * 0.30) : config.tyre === "MEDIUM" ? Math.round(totalLaps * 0.44) : Math.round(totalLaps * 0.58);
@@ -335,8 +388,8 @@ function RaceAnalysis({ config, driversList }: { config: Config, driversList: an
                         <YAxis domain={[1, 20]} reversed tick={axis} />
                         <Tooltip contentStyle={tooltipStyle} />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Line dataKey="mainPos" name={config.driver?.name} stroke={chartColors.red} strokeWidth={2} dot={{ r: 3 }} />
-                        <Line dataKey="rivalPos" name={rivalName} stroke={chartColors.cyan} strokeWidth={2} dot={{ r: 3 }} />
+                        <Line connectNulls={true} type="monotone" dataKey="mainPos" name={config.driver?.name || "Driver"} stroke={chartColors.red} strokeWidth={2.5} dot={{ r: 4, strokeWidth: 1.5, fill: chartColors.red }} activeDot={{ r: 6 }} />
+                        <Line connectNulls={true} type="monotone" dataKey="rivalPos" name={rivalName} stroke={chartColors.cyan} strokeWidth={2.5} dot={{ r: 4, strokeWidth: 1.5, fill: chartColors.cyan }} activeDot={{ r: 6 }} />
                     </LineChart>
                 </ChartFrame>
             </ChartCard>
@@ -479,7 +532,7 @@ function TyreIntelligence({ config }: { config: Config }) {
         </div>
 
         {(() => {
-            const totalLaps = config.race?.total_laps || 57;
+            const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
             const stintPlan = config.tyre === "SOFT" 
                 ? [{ name: "Strategy", stint1: Math.round(totalLaps * 0.28), stint2: Math.round(totalLaps * 0.38), stint3: totalLaps - Math.round(totalLaps * 0.66) }]
                 : config.tyre === "HARD"
@@ -513,14 +566,24 @@ function TyreIntelligence({ config }: { config: Config }) {
   </>;
 }
 
+const strategyCache = new Map<string, any>();
+
 function StrategyOptimizer({ config }: { config: Config }) {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [result, setResult] = useState<any>(null);
 
+  const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
+  const cacheKey = `${config.race?.race_id}_${config.driver?.driver_id}_${config.tyre}_${config.risk}_${totalLaps}`;
+
   useEffect(() => {
+      if (strategyCache.has(cacheKey)) {
+          setResult(strategyCache.get(cacheKey));
+          setLoading(false);
+          return;
+      }
+
       setLoading(true); setError(null);
-      const totalLaps = config.race?.total_laps || 57;
       const tyre = config.tyre || "MEDIUM";
       
       let candidates;
@@ -554,13 +617,14 @@ function StrategyOptimizer({ config }: { config: Config }) {
       }
 
       api.optimizeStrategy(getBaseState(config), candidates, 15, config.risk).then(res => {
+          strategyCache.set(cacheKey, res);
           setResult(res);
           setLoading(false);
       }).catch(err => {
           setError(err.message);
           setLoading(false);
       });
-  }, [config]);
+  }, [config, cacheKey, totalLaps]);
 
   if (loading || error) return <><PageHeader eyebrow="Monte Carlo Strategy Model" title="Strategy Optimizer" description="Phase 6, 7 & 8: Sim, Monte Carlo & Optimization" config={config}/><StateWrapper loading={loading} error={error}>{null}</StateWrapper></>;
   if (!result || !result.data) return null;
@@ -673,7 +737,7 @@ function PitWall({ config }: { config: Config }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
   const [decision, setDecision] = useState<any>(null);
-  const totalLaps = config.race?.total_laps || 57;
+  const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
   const [scrubLap, setScrubLap] = useState(Math.round(totalLaps * 0.49));
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -1051,33 +1115,54 @@ const CustomDot = (props: any) => {
 };
 
 function WhatIf({ config }: { config: Config }) {
-    const totalLaps = config.race?.total_laps || 57;
+    const totalLaps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string|null>(null);
     const [results, setResults] = useState<any[] | null>(null);
     
     const [lap, setLap] = useState(Math.round(totalLaps * 0.49).toString()); 
     const [tyre, setTyre] = useState(config.tyre || "MEDIUM");
+    const [safetyCar, setSafetyCar] = useState("NO");
+    const [weather, setWeather] = useState("DRY");
+    const [activeScenario, setActiveScenario] = useState<number>(0);
 
     useEffect(() => {
-        setLap(Math.round((config.race?.total_laps || 57) * 0.49).toString());
+        const laps = getCircuitTotalLaps(config.race?.name, config.race?.total_laps);
+        setLap(Math.round(laps * 0.49).toString());
         setTyre(config.tyre || "MEDIUM");
         setResults(null);
+        setActiveScenario(0);
     }, [config]);
     
     const runSim = () => {
         setLoading(true); setError(null);
-        const state = getBaseState(config, parseInt(lap), tyre);
+        const curLapNum = parseInt(lap) || 1;
+        const state = getBaseState(config, curLapNum, tyre);
+        
+        let nextCompound = tyre === "HARD" ? "MEDIUM" : "HARD";
+        if (weather === "LIGHT_RAIN") {
+            nextCompound = "INTERMEDIATE";
+            state.track_status = "INTERMEDIATE";
+            state.rainfall = 0.5;
+        } else if (weather === "HEAVY_RAIN") {
+            nextCompound = "WET";
+            state.track_status = "WET";
+            state.rainfall = 1.0;
+        }
+
+        if (safetyCar === "YES") {
+            state.track_status = "SAFETY_CAR";
+        }
         
         // Build 3 scenarios: Pit Now, Stay 3 Laps, Stay 5 Laps
-        const nextCompound = tyre === "HARD" ? "MEDIUM" : "HARD";
-        const s1 = { name: "PIT NOW", starting_compound: tyre, planned_compounds: [tyre, nextCompound], pit_laps: [parseInt(lap)] };
-        const s2 = { name: "STAY +3 LAPS", starting_compound: tyre, planned_compounds: [tyre, nextCompound], pit_laps: [parseInt(lap) + 3] };
-        const s3 = { name: "STAY +5 LAPS", starting_compound: tyre, planned_compounds: [tyre, nextCompound], pit_laps: [parseInt(lap) + 5] };
+        const s1 = { name: "PIT NOW", starting_compound: tyre, planned_compounds: [tyre, nextCompound], pit_laps: [curLapNum] };
+        const s2 = { name: "STAY +3 LAPS", starting_compound: tyre, planned_compounds: [tyre, nextCompound], pit_laps: [Math.min(totalLaps, curLapNum + 3)] };
+        const s3 = { name: "STAY +5 LAPS", starting_compound: tyre, planned_compounds: [tyre, nextCompound], pit_laps: [Math.min(totalLaps, curLapNum + 5)] };
         
         api.optimizeStrategy(state, [s1, s2, s3], 10, config.risk).then(res => {
             if (res.data && res.data.full_results) {
                 setResults(res.data.full_results);
+                setActiveScenario(0);
             }
             setLoading(false);
         }).catch(err => {
@@ -1089,7 +1174,7 @@ function WhatIf({ config }: { config: Config }) {
     return <><PageHeader eyebrow="Decision Sandbox" title="What-If Simulator" description="Stress-test strategy choices before making the call." config={config}/>
       <div className="sim-layout"><aside className="panel sim-controls"><div className="flex items-center gap-2"><Settings2/><h3 className="section-title">Scenario Inputs</h3></div>
         
-        <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">CURRENT LAP</span>
+        <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">CURRENT LAP ({totalLaps} TOTAL LAPS)</span>
             <div className="flex items-center gap-4">
                 <Slider defaultValue={[Math.round(totalLaps * 0.49)]} max={totalLaps} min={1} step={1} value={[parseInt(lap)]} onValueChange={(v) => setLap(v[0].toString())} className="flex-1" />
                 <span className="font-mono text-xs">{lap}</span>
@@ -1098,8 +1183,27 @@ function WhatIf({ config }: { config: Config }) {
         
         <Field label="Current Tyre" value={tyre} options={compounds.map(c=>({id:c, label:c}))} onChange={setTyre}/>
         
-        <Field label="Safety Car" value={"YES"} options={[{id:"YES",label:"YES"},{id:"NO",label:"NO"}]} onChange={()=>{}}/>
-        <Field label="Weather Scenario" value={"DRY"} options={[{id:"DRY",label:"DRY"}]} onChange={()=>{}}/>
+        <Field 
+            label="Weather Scenario" 
+            value={weather} 
+            options={[
+                { id: "DRY", label: "DRY (Clear Track · S/M/H)" },
+                { id: "LIGHT_RAIN", label: "LIGHT RAIN (Damp · Inters)" },
+                { id: "HEAVY_RAIN", label: "HEAVY RAIN (Wet · Wets)" }
+            ]} 
+            onChange={setWeather}
+        />
+
+        <Field 
+            label="Safety Car" 
+            value={safetyCar} 
+            options={[
+                { id: "NO", label: "NO (Full Green Track)" },
+                { id: "YES", label: "YES (VSC / SC Deployed)" }
+            ]} 
+            onChange={setSafetyCar}
+        />
+
         <Field label="Risk Preference" value={config.risk || "Balanced"} options={[{id:"Conservative",label:"Conservative"},{id:"Balanced",label:"Balanced"},{id:"Aggressive",label:"Aggressive"}]} onChange={()=>{}}/>
         
         <Button className="w-full" onClick={runSim}><Activity/> Simulate Scenarios</Button>
@@ -1110,55 +1214,91 @@ function WhatIf({ config }: { config: Config }) {
             {results && (
                 <>
                 <div className="flex gap-2 mb-4 border-b border-border pb-4">
-                    <Button variant="default" size="sm" className="bg-red-500 hover:bg-red-600 text-white border border-red-400">PIT NOW</Button>
-                    <Button variant="outline" size="sm" className="bg-secondary text-muted-foreground">STAY 3 LAPS</Button>
-                    <Button variant="outline" size="sm" className="bg-secondary text-muted-foreground">STAY 5 LAPS</Button>
+                    {results.map((r, i) => (
+                        <Button
+                            key={i}
+                            variant={activeScenario === i ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setActiveScenario(i)}
+                            className={activeScenario === i 
+                                ? "bg-red-500 hover:bg-red-600 text-white font-bold border border-red-400 shadow-sm" 
+                                : "bg-secondary text-muted-foreground hover:text-foreground"
+                            }
+                        >
+                            {r.Strategy}
+                        </Button>
+                    ))}
                 </div>
 
-                <ChartCard title="Scenario Comparison" subtitle="Projected outcomes from current race state" className="!bg-transparent border-none !p-0">
+                <ChartCard title="Scenario Comparison" subtitle="Projected outcomes from current race state (Click any call to inspect)" className="!bg-transparent border-none !p-0">
                     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                        {results.map((r, i) => (
-                            <div key={i} className={`p-4 rounded-lg border ${i === 0 ? "border-red-500 bg-red-500/5" : "border-border bg-secondary/30"}`}>
-                                <div className="flex items-center justify-between mb-4">
-                                    <span className="text-xs font-bold text-muted-foreground">{r.Strategy}</span>
+                        {results.map((r, i) => {
+                            const isSelected = activeScenario === i;
+                            const totalSec = Math.round(r['Mean Race Time']);
+                            const hrs = Math.floor(totalSec / 3600);
+                            const mins = Math.floor((totalSec % 3600) / 60);
+                            const secs = totalSec % 60;
+                            return (
+                                <div 
+                                    key={i} 
+                                    onClick={() => setActiveScenario(i)}
+                                    className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                                        isSelected 
+                                            ? "border-red-500 bg-red-500/10 shadow-lg shadow-red-500/10 ring-1 ring-red-500" 
+                                            : "border-border bg-secondary/30 hover:border-border/80"
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs font-bold text-muted-foreground">{r.Strategy}</span>
+                                        {isSelected && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/40 px-1.5 py-0.5 rounded font-mono font-bold">ACTIVE CALL</span>}
+                                    </div>
+
+                                    <div className="mb-3">
+                                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground block font-mono">TOTAL RACE TIME</span>
+                                        <div className="text-2xl font-mono font-bold text-foreground">
+                                            {hrs > 0 ? `${hrs}h ${mins}m ${secs.toString().padStart(2, '0')}s` : `${mins}m ${secs.toString().padStart(2, '0')}s`}
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground font-mono">
+                                            {Math.floor(totalSec / 60)} min {secs}s ({totalSec} total seconds)
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between text-xs py-2 border-b border-border/50">
+                                        <span className="text-muted-foreground">Expected Pos</span>
+                                        <strong>P{r['Mean Finish Position'].toFixed(1)}</strong>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs py-2 border-b border-border/50">
+                                        <span className="text-muted-foreground">Podium Chance</span>
+                                        <strong>{(r['Podium Probability']*100).toFixed(0)}%</strong>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs py-2">
+                                        <span className="text-muted-foreground">Risk Profile</span>
+                                        <strong className={r.Risk > 0.6 ? "text-red-400" : "text-lime-400"}>{r.Risk > 0.6 ? "HIGH RISK" : r.Risk < 0.4 ? "LOW RISK" : "BALANCED"}</strong>
+                                    </div>
                                 </div>
-                                <div className="text-2xl font-mono font-bold mb-4">{Math.floor(r['Mean Race Time']/60)}:{(r['Mean Race Time']%60).toFixed(0).padStart(2, '0')}</div>
-                                
-                                <div className="flex items-center justify-between text-xs py-2 border-b border-border/50">
-                                    <span className="text-muted-foreground">Expected Pos</span>
-                                    <strong>P{r['Mean Finish Position'].toFixed(1)}</strong>
-                                </div>
-                                <div className="flex items-center justify-between text-xs py-2 border-b border-border/50">
-                                    <span className="text-muted-foreground">Podium</span>
-                                    <strong>{(r['Podium Probability']*100).toFixed(0)}%</strong>
-                                </div>
-                                <div className="flex items-center justify-between text-xs py-2">
-                                    <span className="text-muted-foreground">Risk</span>
-                                    <strong className={r.Risk > 0.6 ? "text-red-400" : "text-lime-400"}>{r.Risk > 0.6 ? "HIGH" : r.Risk < 0.4 ? "LOW" : "MEDIUM"}</strong>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </ChartCard>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
-                    <ChartCard title="Projected Race Time" subtitle="Seconds | lower is faster">
+                    <ChartCard title="Projected Race Time" subtitle="Total Race Time in Seconds (lower is faster)">
                         <ChartFrame height={250}>
                             <BarChart data={results} margin={{ left: -20, right: 10 }}>
                                 <CartesianGrid stroke={chartColors.grid} vertical={false} />
                                 <XAxis dataKey="Strategy" tick={axis} />
                                 <YAxis domain={['dataMin - 10', 'dataMax + 10']} tick={axis} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => val.toFixed(1) + "s"} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => `${Math.floor(val/60)}m ${(val%60).toFixed(0)}s (${val.toFixed(1)}s)`} />
                                 <Bar dataKey="Mean Race Time" fill={chartColors.red} radius={[4, 4, 0, 0]} maxBarSize={60}>
                                     {results.map((entry: any, index: number) => (
-                                        <Cell key={`cell-${index}`} fill={index === 0 ? chartColors.red : chartColors.cyan} />
+                                        <Cell key={`cell-${index}`} fill={index === activeScenario ? chartColors.red : chartColors.cyan} />
                                     ))}
                                 </Bar>
                             </BarChart>
                         </ChartFrame>
                     </ChartCard>
 
-                    <ChartCard title="Podium Probability" subtitle="Outcome likelihood by call">
+                    <ChartCard title="Podium Probability" subtitle="Likelihood of podium finish by call">
                         <ChartFrame height={250}>
                             <BarChart data={results} margin={{ left: -20, right: 10 }}>
                                 <CartesianGrid stroke={chartColors.grid} vertical={false} />
@@ -1167,7 +1307,7 @@ function WhatIf({ config }: { config: Config }) {
                                 <Tooltip contentStyle={tooltipStyle} formatter={(val: number) => (val * 100).toFixed(1) + "%"} />
                                 <Bar dataKey="Podium Probability" fill={chartColors.cyan} radius={[4, 4, 0, 0]} maxBarSize={60}>
                                     {results.map((entry: any, index: number) => (
-                                        <Cell key={`cell-${index}`} fill={index === 0 ? chartColors.cyan : chartColors.muted} />
+                                        <Cell key={`cell-${index}`} fill={index === activeScenario ? chartColors.cyan : chartColors.muted} />
                                     ))}
                                 </Bar>
                             </BarChart>

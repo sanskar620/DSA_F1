@@ -76,36 +76,54 @@ def run_monte_carlo(
     uncertainty_config: UncertaintyConfig = UncertaintyConfig()
 ) -> List[Dict[str, Any]]:
     """
-    Executes a Monte Carlo simulation for a given strategy.
-    Re-uses Phase 6's simulate_strategy without duplicating core logic.
+    Executes a high-performance Monte Carlo simulation for a given strategy.
+    Runs the ML trajectory simulator once to establish the exact degradation curve,
+    then vector-perturbs lap times and pit stops across N simulations.
     """
-    # Use a seed for perfect reproducibility
     rng = np.random.default_rng(random_seed)
     
-    mc_results = []
+    # 1. Run deterministic base trajectory once
+    comp_model = CompetitorModel(base_competitors)
+    from backend.simulation.pit_loss import get_pit_loss
+    base_result = simulate_strategy(
+        strategy=strategy,
+        initial_state=race_state,
+        predictor=base_predictor,
+        competitors=comp_model,
+        pit_loss_func=get_pit_loss
+    )
     
+    lap_history = base_result.get("lap_history", [])
+    n_laps = len(lap_history)
+    n_pits = max(1, base_result.get("pit_stops", len(strategy.pit_laps)))
+    base_total_time = base_result.get("total_predicted_time", 0.0)
+    base_pos = base_result.get("estimated_finish_position", race_state.current_position)
+    
+    if n_simulations <= 1:
+        base_result['simulation_id'] = 0
+        return [base_result]
+        
+    # 2. Vectorized perturbations for N simulations
+    lap_noise_matrix = rng.normal(0, uncertainty_config.lap_time_std, size=(n_simulations, max(1, n_laps)))
+    pit_noise_matrix = rng.normal(0, uncertainty_config.pit_loss_std, size=(n_simulations, n_pits))
+    
+    total_lap_noise = lap_noise_matrix.sum(axis=1)
+    total_pit_noise = pit_noise_matrix.sum(axis=1)
+    
+    mc_results = []
     for sim_id in range(n_simulations):
-        # 1. Create Stochastic wrappers
-        stoch_predictor = StochasticPredictor(base_predictor, uncertainty_config, rng)
-        stoch_competitors = StochasticCompetitorModel(base_competitors, uncertainty_config, rng)
+        sim_total_time = float(base_total_time + total_lap_noise[sim_id] + total_pit_noise[sim_id])
+        delta_seconds = sim_total_time - base_total_time
+        pos_shift = int(np.round(delta_seconds / 7.0 + rng.normal(0, 0.3)))
+        sim_pos = int(np.clip(base_pos + pos_shift, 1, 20))
         
-        # We need to inject pit loss uncertainty. The original simulator calls get_pit_loss directly.
-        # Since we cannot easily monkey-patch get_pit_loss natively without side effects, 
-        # a better way is to override it temporarily, or just let Phase 6 accept a pit_loss_func.
-        # Wait, the prompt says "Do not copy Phase 6 simulation logic".
-        # We will modify Phase 6 slightly to accept an optional pit_loss_func kwargs if not already done.
-        
-        from backend.simulation.pit_loss import get_pit_loss
-        # 2. Run deterministic simulator
-        result = simulate_strategy(
-            strategy=strategy,
-            initial_state=race_state,
-            predictor=stoch_predictor,
-            competitors=stoch_competitors,
-            pit_loss_func=lambda c: get_pit_loss(c) + rng.normal(0, uncertainty_config.pit_loss_std)
-        )
-        
-        result['simulation_id'] = sim_id
-        mc_results.append(result)
+        mc_results.append({
+            "strategy_name": strategy.name,
+            "pit_laps": strategy.pit_laps,
+            "total_predicted_time": sim_total_time,
+            "estimated_finish_position": sim_pos,
+            "pit_stops": base_result.get("pit_stops", len(strategy.pit_laps)),
+            "simulation_id": sim_id
+        })
         
     return mc_results
